@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Deploys a DynamoDB table with the latest movie releases, and launches
+  an Ubuntu EC2 instance (t2.micro) with consolidated SSM + DynamoDB read-only
+  permissions, populates the table via UserData, assigns a public IP,
+  and includes logging and retry logic.
+
+Parameters:
+  KeyName:
+    Type: String
+    Description: Existing EC2 KeyPair name for SSH access
+    Default: key
+  Region:
+    Type: String
+    Description: AWS Region
+    Default: us-east-1
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0793f09547f5c078c
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Default: subnet-0291b1754bf5c0c38
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+  LatestUbuntuFocalAMI:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/canonical/ubuntu/server/focal/stable/current/amd64/hvm/ebs-gp2/ami-id
+    Description: Latest Ubuntu 20.04 LTS AMI via SSM
+
+Resources:
+
+  MovieReleasesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: LatestMovieReleases
+      AttributeDefinitions:
+        - AttributeName: Title
+          AttributeType: S
+      KeySchema:
+        - AttributeName: Title
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+    DeletionPolicy: Retain
+
+  EC2CombinedRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: DynamoDBReadOnlyPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:BatchGetItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:DescribeTable
+                Resource: !GetAtt MovieReleasesTable.Arn
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2CombinedRole
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH (port 22)
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  MovieEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          SubnetId: !Ref SubnetId
+          AssociatePublicIpAddress: true
+          GroupSet:
+            - !Ref InstanceSecurityGroup
+      ImageId: !Ref LatestUbuntuFocalAMI
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          exec > >(tee /var/log/user-data.log | logger -t user-data) 2>&1
+
+          echo "Setting AWS region for CLI operations"
+          export AWS_DEFAULT_REGION=us-east-1
+
+          apt-get update -y
+          apt-get install -y awscli snapd jq
+
+          # Ensure SSM agent is installed and running
+          if ! systemctl is-active --quiet snap.amazon-ssm-agent.amazon-ssm-agent.service; then
+            snap install amazon-ssm-agent --classic
+            systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
+            systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service
+          fi
+
+          # Wait for DynamoDB table readiness
+          until aws dynamodb describe-table --table-name LatestMovieReleases; do
+            echo "Waiting for LatestMovieReleases table..."
+            sleep 5
+          done
+
+          # Batch-write with retry and exponential backoff
+          REQUEST='{
+            "LatestMovieReleases": [
+              {"PutRequest": {"Item": {"Title": {"S": "Movie One"}, "Genre": {"S": "Action"}, "ReleaseDate": {"S": "2025-09-01"}, "Rating": {"S": "8.2"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Two"}, "Genre": {"S": "Drama"}, "ReleaseDate": {"S": "2025-08-28"}, "Rating": {"S": "7.5"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Three"}, "Genre": {"S": "Comedy"}, "ReleaseDate": {"S": "2025-08-15"}, "Rating": {"S": "6.9"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Four"}, "Genre": {"S": "Sci-Fi"}, "ReleaseDate": {"S": "2025-07-30"}, "Rating": {"S": "8.0"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Five"}, "Genre": {"S": "Romance"}, "ReleaseDate": {"S": "2025-07-20"}, "Rating": {"S": "7.2"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Six"}, "Genre": {"S": "Horror"}, "ReleaseDate": {"S": "2025-07-10"}, "Rating": {"S": "6.5"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Seven"}, "Genre": {"S": "Thriller"}, "ReleaseDate": {"S": "2025-06-25"}, "Rating": {"S": "8.1"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Eight"}, "Genre": {"S": "Animation"}, "ReleaseDate": {"S": "2025-06-10"}, "Rating": {"S": "7.8"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Nine"}, "Genre": {"S": "Documentary"}, "ReleaseDate": {"S": "2025-06-01"}, "Rating": {"S": "8.7"}}}},
+              {"PutRequest": {"Item": {"Title": {"S": "Movie Ten"}, "Genre": {"S": "Fantasy"}, "ReleaseDate": {"S": "2025-05-20"}, "Rating": {"S": "7.9"}}}}
+            ]
+          }'
+          attempt=0
+          max_attempts=5
+          backoff=1
+          while [ $attempt -lt $max_attempts ]; do
+            response=$(aws dynamodb batch-write-item --request-items "$REQUEST")
+            unprocessed=$(echo "$response" | jq '.UnprocessedItems | length')
+            if [ "$unprocessed" -eq 0 ]; then
+              echo "All movie items inserted successfully."
+              break
+            fi
+            echo "Retrying $unprocessed unprocessed items..."
+            REQUEST=$(echo "$response" | jq -c '.UnprocessedItems')
+            attempt=$((attempt + 1))
+            sleep $((backoff))
+            backoff=$((backoff * 2))
+          done
+          if [ $attempt -eq $max_attempts ]; then
+            echo "WARNING: Some items remain unprocessed after $max_attempts attempts."
+          fi
+
+Outputs:
+  DynamoDBTableName:
+    Description: DynamoDB Table Name
+    Value: !Ref MovieReleasesTable
+
+  EC2InstanceId:
+    Description: Ubuntu EC2 Instance ID
+    Value: !Ref MovieEC2Instance
