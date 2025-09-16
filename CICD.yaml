@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CodePipeline with manual approval before deploy
+
+Parameters:
+  GitHubRepoOwner:
+    Type: String
+    Description: GitHub repository owner (user/org)
+    default: shehuj
+  GitHubRepoName:
+    Type: String
+    Description: GitHub repository name
+    default: redLUIT_CICD
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: GitHub branch to use
+  GitHubOauthToken:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: SSM parameter name that holds GitHub OAuth token
+  ArtifactStoreBucket:
+    Type: String
+    Description: S3 bucket for pipeline artifacts
+  PipelineRoleArn:
+    Type: String
+    Description: IAM Role ARN for CodePipeline to assume
+  DeployRoleArn:
+    Type: String
+    Description: IAM Role ARN used by CloudFormation deploy action
+  DeployStackName:
+    Type: String
+    Default: "MyS3Deploy"
+    Description: Name of the CloudFormation stack to create/update
+  DeployTemplatePath:
+    Type: String
+    Default: "cloudformation/CICD.yaml"
+    Description: Path (within source artifact) to the CFN template to deploy
+
+Resources:
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub "${GitHubRepoName}-Pipeline"
+      RoleArn: !Ref PipelineRoleArn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactStoreBucket
+      Stages:
+        # 1. Source Stage
+        - Name: Source
+          Actions:
+            - Name: GitHub_Source
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                Owner: !Ref GitHubRepoOwner
+                Repo: !Ref GitHubRepoName
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubOauthToken
+              RunOrder: 1
+
+        # 2. Manual Approval Stage
+        - Name: ManualApproval
+          Actions:
+            - Name: RequireManagerApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              InputArtifacts: []      # Approval actions have no input artifacts
+              OutputArtifacts: []
+              Configuration:
+                # Optional: send a notification
+                NotificationArn: arn:aws:sns:us-east-1:615299732970:CI_Approvals.fifo
+                CustomData: "Please approve changes before deploying to production"
+                # ExternalEntityLink: "https://your-review-dashboard"  # optional link
+              RunOrder: 1
+
+        # 3. Deploy Stage
+        - Name: Deploy
+          Actions:
+            - Name: CFN_Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                StackName: !Ref DeployStackName
+                TemplatePath: !Sub "SourceOutput::${DeployTemplatePath}"
+                Capabilities: CAPABILITY_NAMED_IAM  # or whatever your template needs
+                RoleArn: !Ref DeployRoleArn
+              RunOrder: 1
+
+      # Optional: pipeline tags etc
+      Tags:
+        - Key: Environment
+          Value: production
+
+Outputs:
+  PipelineName:
+    Description: Name of the created pipeline
+    Value: !Ref Pipeline
