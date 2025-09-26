@@ -18,7 +18,7 @@ def check_files(base_dir: Path, required_files: list[str]) -> bool:
 def main():
     # The directory containing this script
     script_path = Path(__file__).resolve()
-    repo_root = script_path.parent  # base directory where files should reside
+    repo_root = script_path.parent.parent  # base directory where files should reside
 
     # List required filenames relative to this directory
     required = [
@@ -33,7 +33,7 @@ def main():
     if not ok:
         sys.exit(1)
 
-#    print("All required files are present in", repo_root)
+    print("All required files are present in", repo_root)
     sys.exit(0)
 
 if __name__ == "__main__":
