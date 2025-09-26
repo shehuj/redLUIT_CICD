@@ -16,11 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check required files exist: ["Check required files exist"]
+        check required files exist: ["Check required files"]
+        test: ["Check required files exist"]
+
 
     steps:
     - uses: actions/checkout@v4
-    - name: Check required files exist
+    - name: Check required files
       run: |
         if [ ! -f "README.md", ".gitignore" ]; then
             echo "ERROR: README.md not found!"
