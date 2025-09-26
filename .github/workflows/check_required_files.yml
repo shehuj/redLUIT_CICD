@@ -1,0 +1,34 @@
+## Check required files exist
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+
+name: Python package
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check required files exist: ["Check required files exist"]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Check required files exist
+      run: |
+        if [ ! -f "README.md", ".gitignore" ]; then
+            echo "ERROR: README.md not found!"
+            exit 1
+        else
+            echo "README.md exists."
+        fi 
+    - name: Check required files exist
+      run: |
+        pytest tests/
+        
