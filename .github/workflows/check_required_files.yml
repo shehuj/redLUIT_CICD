@@ -25,7 +25,7 @@ jobs:
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
       with:
-        file_checker: ${{ matrix.check_required_files }}
+        python-version: ${{ matrix.check_required_files }}
 
     - name: Check required files
       run: |
