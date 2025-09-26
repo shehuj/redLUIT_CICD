@@ -23,8 +23,8 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Check presence of required files
-      run: |
-        pytests tests/
+      run: | 
+        python tests/test_requirements.py
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
