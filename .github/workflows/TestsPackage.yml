@@ -24,7 +24,7 @@ jobs:
 
     - name: Check presence of required files
       run: |
-        pytests test/test_required_files.py
+        pytests test/
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v3
