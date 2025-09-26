@@ -17,7 +17,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
-#        test: ["Check required files exist"]
 
 
     steps:
@@ -37,15 +36,7 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-     
-    - name: Check required files exist
-      run: |
-          if [ ! -f "README.md", ".gitignore" ]; then
-            echo "ERROR: README.md not found!"
-            exit 1
-          else
-            echo "README.md exists."
-          fi 
+      
     - name: Test with pytest
       run: |
         pytest tests/

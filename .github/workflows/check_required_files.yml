@@ -17,11 +17,16 @@ jobs:
       fail-fast: false
       matrix:
         check required files exist: ["Check required files"]
-        test: ["Check required files exist"]
-
+#        test: ["Check required files exist"]
 
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        file_checker: ${{ matrix.check_required_files }}
+
     - name: Check required files
       run: |
         if [ ! -f "README.md", ".gitignore" ]; then
