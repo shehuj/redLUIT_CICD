@@ -17,6 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
+        test: ["Check required files exist", "Test with pytest"]
+
 
     steps:
     - uses: actions/checkout@v4
