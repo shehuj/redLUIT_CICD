@@ -24,7 +24,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Test File Presence ${{ matrix.file-presence }}
-      uses: actions/file-presence@v3
+      uses: tests/test-file-presence@v1
       with:
         file-presence: ${{ matrix.file-presence }}
     
