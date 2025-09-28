@@ -18,10 +18,16 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
+        file-presence: ["present", "absent"]
 
     steps:
     - uses: actions/checkout@v4
 
+    - name: Test File Presence ${{ matrix.file-presence }}
+      uses: actions/setup-python@v3
+      with:
+        file-presence: ${{ matrix.file-presence }}
+    
     - name: Check presence of required files
       run: | 
         python tests/test_required_files.py
